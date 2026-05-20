@@ -171,7 +171,7 @@ pub fn run_output_driven_migration(opts: &OutputDrivenMigrationOptions) -> anyho
         })
         .collect();
     
-    timeline.sort_by_key(|(height, _)| *height);
+    timeline.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.mined_timestamp.cmp(&b.1.mined_timestamp)));
     
     info!(target: "migration", count = timeline.len(), "Built timeline (sorted by mined_height)");
 
@@ -201,7 +201,7 @@ pub fn run_output_driven_migration(opts: &OutputDrivenMigrationOptions) -> anyho
             &FixedHash::try_from(legacy_output.mined_in_block.clone().unwrap_or_default())
                 .unwrap_or(FixedHash::zero()),
             legacy_output.mined_timestamp
-                .map(|t| t.timestamp() as u64)
+                .map(|t| t as u64)
                 .unwrap_or(0),
             None,  // memo_parsed
             None,  // memo_hex
@@ -234,12 +234,12 @@ pub fn run_output_driven_migration(opts: &OutputDrivenMigrationOptions) -> anyho
                     balance_debit: MicroMinotari::zero(),
                     effective_date: DateTime::<Utc>::from_timestamp(
                         legacy_output.mined_timestamp
-                            .map(|t| t.timestamp())
+                            
                             .unwrap_or(0), 0
                     ).unwrap_or_else(|| Utc::now()),
                     effective_height: height,
-                    claimed_recipient_address: Some(displayed_tx.source.clone()),
-                    claimed_sender_address: Some(displayed_tx.destination.clone()),
+                    claimed_recipient_address: TariAddress::from_bytes(&tx.destination_address).ok(),
+                    claimed_sender_address: TariAddress::from_bytes(&tx.source_address).ok(),
                     memo_parsed: displayed_tx.memo.clone(),
                     memo_hex: None,
                     claimed_fee: None,
@@ -268,7 +268,7 @@ pub fn run_output_driven_migration(opts: &OutputDrivenMigrationOptions) -> anyho
                     &FixedHash::try_from(legacy_output.mined_in_block.clone().unwrap_or_default())
                         .unwrap_or(FixedHash::zero()),
                     legacy_output.mined_timestamp
-                        .map(|t| t.timestamp() as u64)
+                        .map(|t| t as u64)
                         .unwrap_or(0),
                 ).context("Failed to insert input into destination DB")?;
                 
@@ -291,12 +291,12 @@ pub fn run_output_driven_migration(opts: &OutputDrivenMigrationOptions) -> anyho
                     balance_debit,
                     effective_date: DateTime::<Utc>::from_timestamp(
                         legacy_output.mined_timestamp
-                            .map(|t| t.timestamp())
+                            
                             .unwrap_or(0), 0
                     ).unwrap_or_else(|| Utc::now()),
                     effective_height: height,
-                    claimed_recipient_address: Some(displayed_tx.destination.clone()),
-                    claimed_sender_address: Some(displayed_tx.source.clone()),
+                    claimed_recipient_address: TariAddress::from_bytes(&tx.destination_address).ok(),
+                    claimed_sender_address: TariAddress::from_bytes(&tx.source_address).ok(),
                     memo_parsed: displayed_tx.memo.clone(),
                     memo_hex: None,
                     claimed_fee: None,
@@ -339,13 +339,11 @@ pub fn run_output_driven_migration(opts: &OutputDrivenMigrationOptions) -> anyho
     );
     
     if opts.dry_run {
-        // Rollback (don't commit)
-        // NOTE: rusqlite doesn't easily support rollback with r2d2...
-        // For dry-run, we'd need to open the connection differently.
-        // For now, we just log what WOULD be done.
-        info!(target: "migration", "Dry run requested - rolling back...");
-        // In a real implementation, we'd use `conn.execute("ROLLBACK", [])` here.
-        // This requires the migration to happen inside an explicit transaction.
+        info!(target: "migration", "Dry run requested - removing destination DB...");
+        drop(conn);
+        drop(pool);
+        let _ = std::fs::remove_file(&opts.destination_db_path);
+        info!(target: "migration", "Dry run complete - destination DB removed");
     }
     
     Ok(MigrationResult {
