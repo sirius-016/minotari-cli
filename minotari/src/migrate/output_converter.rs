@@ -88,8 +88,8 @@ pub fn convert_output(legacy: &ConsoleOutputRow, _cipher_seed: &CipherSeed) -> a
         legacy.script_lock_height as u64,               // script_lock_height
         sender_offset_public_key,                       // sender_offset_public_key
         metadata_signature,                             // metadata_signature
-        Default::default(),                             // covenant (simplified)
-        legacy.covenant.clone().try_into().unwrap_or_default(), // encrypted_data (use covenant bytes as placeholder)
+        legacy.covenant.clone().try_into().unwrap_or_default(), // covenant
+        Default::default(),                             // encrypted_data
         legacy.mined_height.map(|h| h as u64),          // mined_height
         legacy.rangeproof.clone(),                      // rangeproof
     );
